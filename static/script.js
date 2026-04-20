@@ -637,7 +637,21 @@ async function streamChatReply(message, onEvent) {
   }
 }
 
+// ── Cached Speech Config (avoid re-fetching token on every recognition) ──
+let _cachedSpeechConfig = null;
+let _cachedSpeechConfigTime = 0;
+const SPEECH_CONFIG_TTL_MS = 8 * 60 * 1000; // 8 min (Azure tokens expire at 10 min)
+
 async function createSpeechConfig() {
+  const now = Date.now();
+  // Reuse cached config if still fresh
+  if (_cachedSpeechConfig && (now - _cachedSpeechConfigTime) < SPEECH_CONFIG_TTL_MS) {
+    // Update language in case it changed
+    _cachedSpeechConfig.speechRecognitionLanguage = languageSelect.value;
+    return _cachedSpeechConfig;
+  }
+
+  console.log("[Speech] Fetching new Azure auth token...");
   const payload = await fetchJson("/api/speech/token", { method: "POST" });
   const speechConfig = SpeechSDK.SpeechConfig.fromAuthorizationToken(
     payload.token,
@@ -645,8 +659,26 @@ async function createSpeechConfig() {
   );
   speechConfig.speechRecognitionLanguage = languageSelect.value;
   speechConfig.speechSynthesisVoiceName = config.defaultVoice;
+
+  _cachedSpeechConfig = speechConfig;
+  _cachedSpeechConfigTime = now;
+  console.log("[Speech] Token cached. Next fetch in ~8 min.");
   return speechConfig;
 }
+
+// Pre-warm: fetch token + load SDK on page load so first recognition is instant
+async function warmUpSpeechConfig() {
+  try {
+    const sdkReady = await ensureSpeechSdk();
+    if (sdkReady && config.speechReady) {
+      await createSpeechConfig();
+      console.log("[Speech] Warm-up complete — first recognition will be fast.");
+    }
+  } catch (err) {
+    console.warn("[Speech] Warm-up failed (will retry on first use):", err.message);
+  }
+}
+warmUpSpeechConfig();
 
 function resetRemoteMedia() {
   remoteVideo.innerHTML = "";
@@ -1599,10 +1631,15 @@ async function submitMessage(message) {
     let assistantBubble = null;
     let streamedReply = "";
 
-    const isLiveKitActive = !!(livekitState.room && livekitState.room.localParticipant);
+    const hasLiveKitRoom = !!(livekitState.room && livekitState.room.localParticipant);
+    // Only use LiveKit data-channel path when we KNOW the agent is online
+    // avatarReady is set only when a media track from the agent has been received
+    const isLiveKitActive = hasLiveKitRoom && speechState.avatarReady;
     const canStreamVoice = (isAnamProvider() && speechState.avatarReady && anamState.socket) || isLiveKitActive;
 
     try {
+      console.log("[submitMessage] isLiveKitActive:", isLiveKitActive, "avatarReady:", speechState.avatarReady, "hasRoom:", hasLiveKitRoom);
+
       if (isLiveKitActive) {
         // --- LiveKit Path: Send message directly to the Gemini agent ---
         // The agent will process it (using tools like RAG search) and speak the answer.
@@ -1847,11 +1884,120 @@ async function submitMessage(message) {
   }
 }
 
+// ── Azure STT browser-side recognizer ─────────────────────────────────
+async function startAzureRecognition() {
+  const sdkReady = await ensureSpeechSdk();
+  if (!sdkReady) throw new Error("Azure Speech SDK failed to load.");
+
+  const speechConfig = await createSpeechConfig();
+  const audioConfig = SpeechSDK.AudioConfig.fromDefaultMicrophoneInput();
+  const recognizer = new SpeechSDK.SpeechRecognizer(speechConfig, audioConfig);
+
+  speechState.recognizer = recognizer;
+  speechState.recognizing = true;
+
+  const selectedLang = languageSelect?.value || (assistantLanguage === "en" ? "en-US" : "ar-SA");
+
+  // Show interim results as user speaks
+  recognizer.recognizing = (s, e) => {
+    if (e.result.reason === SpeechSDK.ResultReason.RecognizingSpeech) {
+      const interim = (e.result.text || "").trim();
+      if (interim) {
+        chatInput.value = interim;
+        setSdkStatus(`Hearing: "${interim.slice(0, 60)}..."`, "pending");
+      }
+    }
+  };
+
+  micButton.title = "Stop mic";
+  micButton.classList.add("active-mic");
+  setSdkStatus(
+    selectedLang.startsWith("ar") ? "🎙️ Listening (Arabic)..." : "🎙️ Listening (English)...",
+    "pending"
+  );
+  const lb = document.getElementById("listeningBar");
+  if (lb) lb.style.display = "flex";
+
+  console.log("[Azure STT] Starting recognizeOnceAsync...");
+
+  recognizer.recognizeOnceAsync(
+    async (result) => {
+      // Clean up recognizer
+      speechState.recognizing = false;
+      speechState.recognizer = null;
+      try { recognizer.close(); } catch { /* ignore */ }
+
+      micButton.title = "Start mic";
+      micButton.classList.remove("active-mic");
+      const lb2 = document.getElementById("listeningBar");
+      if (lb2) lb2.style.display = "none";
+
+      if (result.reason === SpeechSDK.ResultReason.RecognizedSpeech) {
+        const text = (result.text || "").trim();
+        if (!text) {
+          setSdkStatus("No speech detected. Try again.", "neutral");
+          scheduleContinuousRecognitionRestart(500);
+          return;
+        }
+
+        console.log("[Azure STT] Recognized:", text);
+        chatInput.value = text;
+
+        // Auto-submit voice input
+        speechState.handlingMicMessage = true;
+        try {
+          await submitMessage(text);
+          chatInput.value = "";
+        } finally {
+          speechState.handlingMicMessage = false;
+        }
+
+        setSdkStatus("Recognition complete.", "success");
+      } else if (result.reason === SpeechSDK.ResultReason.NoMatch) {
+        console.warn("[Azure STT] NoMatch - could not recognize speech");
+        setSdkStatus("Could not recognize speech. Try speaking louder/closer.", "neutral");
+      } else if (result.reason === SpeechSDK.ResultReason.Canceled) {
+        const cancellation = SpeechSDK.CancellationDetails.fromResult(result);
+        console.error("[Azure STT] Canceled:", cancellation.reason, cancellation.errorDetails);
+        setSdkStatus("STT error: " + (cancellation.errorDetails || cancellation.reason), "error");
+      }
+
+      // Restart if continuous mode
+      const restartDelay = speechState.synthesizing || anamState.isVoiceActive ? 1500 : 400;
+      scheduleContinuousRecognitionRestart(restartDelay);
+    },
+    (err) => {
+      console.error("[Azure STT] Error:", err);
+      speechState.recognizing = false;
+      speechState.recognizer = null;
+
+      micButton.title = "Start mic";
+      micButton.classList.remove("active-mic");
+      const lb2 = document.getElementById("listeningBar");
+      if (lb2) lb2.style.display = "none";
+
+      setSdkStatus("Azure STT failed: " + err, "error");
+      scheduleContinuousRecognitionRestart(1000);
+    }
+  );
+}
+
 async function startRecognition() {
   if (speechState.recognizing) {
     return;
   }
 
+  // ── Try Azure STT first (real-time, built-in VAD, much better accuracy) ──
+  if (config.speechReady) {
+    try {
+      await startAzureRecognition();
+      return; // Success — Azure is handling it
+    } catch (err) {
+      console.warn("[STT] Azure STT unavailable, falling back to Gemini:", err.message);
+    }
+  }
+
+  // ── Fallback: MediaRecorder + Gemini batch STT ──
   try {
     const selectedLang = (languageSelect?.value || (assistantLanguage === "en" ? "en-US" : "ar-SA"));
     const recognitionLang = selectedLang.startsWith("en") ? "en-US" : "ar-SA";
@@ -1882,6 +2028,7 @@ async function startRecognition() {
         sampleRate: 16000,
         echoCancellation: true,
         noiseSuppression: true,
+        autoGainControl: true,
       },
     });
 
@@ -1975,10 +2122,10 @@ async function startRecognition() {
 
     let silentFrames = 0;
     let totalFrames = 0;
-    const SILENCE_THRESHOLD = 12;        // RMS level below which = silence
-    const SILENCE_FRAMES_TO_STOP = 20;   // ~0.5s of silence to stop (was 36 / ~1.2s)
-    const MIN_RECORDING_FRAMES = 8;      // ~0.2s minimum recording (was 12 / ~0.4s)
-    const POLL_MS = 25;                  // poll every 25ms (was 33ms)
+    const SILENCE_THRESHOLD = 6;          // RMS level below which = silence (lowered to catch soft speech)
+    const SILENCE_FRAMES_TO_STOP = 60;    // ~1.5s of silence to stop (was 20 / ~0.5s — way too fast)
+    const MIN_RECORDING_FRAMES = 40;      // ~1s minimum recording (was 8 / ~0.2s)
+    const POLL_MS = 25;                   // poll every 25ms
 
     speechState._silenceInterval = setInterval(() => {
       const data = new Uint8Array(analyser.frequencyBinCount);
@@ -2017,7 +2164,8 @@ async function startRecognition() {
 function stopRecognition(updateStatus = true) {
   if (speechState.recognizer) {
     try {
-      speechState.recognizer.stop();
+      speechState.recognizer.stopContinuousRecognitionAsync?.(() => {}, () => {});
+      speechState.recognizer.close();
     } catch {
       // Ignore stop failures when recognizer is already ending.
     }
@@ -2165,8 +2313,8 @@ speakButton.addEventListener("click", async () => {
 });
 
 async function toggleContinuousVoiceChat() {
-  // --- LiveKit real-time voice toggle ---
-  if (isLiveKitProvider() && livekitState.room) {
+  // --- LiveKit real-time voice toggle (only when agent is actually connected) ---
+  if (isLiveKitProvider() && livekitState.room && speechState.avatarReady) {
     livekitState.micEnabled = !livekitState.micEnabled;
     try {
       await livekitState.room.localParticipant.setMicrophoneEnabled(livekitState.micEnabled);
