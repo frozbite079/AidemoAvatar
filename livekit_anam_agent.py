@@ -5,10 +5,10 @@ from urllib.request import urlopen, Request as URLRequest
 from urllib.error import URLError
 import json
 
-from google.genai import types as genai_types
 from livekit import rtc
 from livekit.agents import Agent, AgentSession, JobContext, WorkerOptions, cli, function_tool, llm
-from livekit.plugins import anam, google, silero
+from livekit.agents.voice.room_io import RoomInputOptions, RoomOutputOptions
+from livekit.plugins import anam, anthropic, azure, google
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("musaed-agent")
 
@@ -27,7 +27,14 @@ def load_dotenv(path: Path) -> None:
         if not cleaned or cleaned.startswith("#") or "=" not in cleaned:
             continue
         key, value = cleaned.split("=", 1)
-        os.environ.setdefault(key.strip(), value.strip())
+        parsed = value.strip()
+        if (
+            len(parsed) >= 2
+            and parsed[0] == parsed[-1]
+            and parsed[0] in {'"', "'"}
+        ):
+            parsed = parsed[1:-1]
+        os.environ[key.strip()] = parsed
 
 
 def require_env(name: str) -> str:
@@ -35,6 +42,10 @@ def require_env(name: str) -> str:
     if not value:
         raise RuntimeError(f"Missing required environment variable: {name}")
     return value
+
+
+# Ensure worker subprocesses always get current .env values (important in start mode).
+load_dotenv(ENV_PATH)
 
 
 def get_float_env(name: str, default: float) -> float:
@@ -57,6 +68,11 @@ def get_int_env(name: str, default: int) -> int:
     except ValueError:
         logger.warning("Invalid %s=%r, using default %s", name, raw, default)
         return default
+
+
+def get_optional_env(name: str) -> str | None:
+    raw = os.getenv(name, "").strip()
+    return raw or None
 
 
 def _looks_like_missing_document_response(answer: str) -> bool:
@@ -265,36 +281,45 @@ async def search_uploaded_documents(question: str, document_id: str = "") -> str
 async def entrypoint(ctx: JobContext) -> None:
     await ctx.connect()
 
+    def _is_user_identity(identity: str) -> bool:
+        lower = (identity or "").strip().lower()
+        if not lower:
+            return False
+        if lower.startswith(("web-", "user-", "guest-")):
+            return True
+        if any(token in lower for token in ("anam", "avatar", "agent", "bot")):
+            return False
+        return True
+
+    def _select_initial_user_identity() -> str | None:
+        for participant in ctx.room.remote_participants.values():
+            if _is_user_identity(participant.identity):
+                return participant.identity
+        return None
+
     # --- Credentials ---
     anam_api_key = require_env("ANAM_API_KEY")
     anam_avatar_id = require_env("ANAM_AVATAR_ID")
-    gemini_api_key = os.getenv("GOOGLE_API_KEY", "").strip() or os.getenv("GEMINI_API_KEY", "").strip()
-    if not gemini_api_key:
-        raise RuntimeError("Missing GOOGLE_API_KEY or GEMINI_API_KEY")
+    anthropic_api_key = require_env("ANTHROPIC_API_KEY")
+    anthropic_model = os.getenv("ANTHROPIC_MODEL", "claude-haiku-4-5-20251001").strip() or "claude-haiku-4-5-20251001"
 
-    gemini_voice = os.getenv("GEMINI_LIVE_VOICE", "Puck")
-    # Defaults tuned for complete-sentence behavior (short pauses should not end the turn too early).
-    endpointing_min_delay = 0.2
-    endpointing_max_delay = 0.5
-    aad_prefix_padding_ms = 100
-    aad_silence_ms = 200
-
-    if endpointing_min_delay > endpointing_max_delay:
-        logger.warning(
-            "LIVEKIT endpointing delays are invalid (min=%s, max=%s). Falling back to 0.6/1.8.",
-            endpointing_min_delay,
-            endpointing_max_delay,
-        )
-        endpointing_min_delay = 0.2
-        endpointing_max_delay = 0.5
-
-    logger.info(
-        "Voice turn tuning: min_delay=%s max_delay=%s aad_prefix_padding_ms=%s aad_silence_ms=%s",
-        endpointing_min_delay,
-        endpointing_max_delay,
-        aad_prefix_padding_ms,
-        aad_silence_ms,
+    azure_speech_key = require_env("AZURE_SPEECH_KEY")
+    azure_speech_region = require_env("AZURE_SPEECH_REGION")
+    # Use dedicated endpoint overrides for LiveKit speech path.
+    # Do not reuse AZURE_SPEECH_ENDPOINT because that value is often for other app REST flows.
+    azure_stt_endpoint = get_optional_env("LIVEKIT_AZURE_STT_ENDPOINT")
+    azure_tts_endpoint = (
+        get_optional_env("LIVEKIT_AZURE_TTS_ENDPOINT")
+        or f"https://{azure_speech_region}.tts.speech.microsoft.com/cognitiveservices/v1"
     )
+    stt_language = os.getenv("LIVEKIT_STT_LANGUAGE", os.getenv("LIVEKIT_LANGUAGE", "ar-SA")).strip() or "ar-SA"
+    tts_language = os.getenv("LIVEKIT_TTS_LANGUAGE", stt_language).strip() or stt_language
+    tts_voice = os.getenv("AZURE_SPEECH_VOICE", "ar-SA-HamedNeural").strip() or "ar-SA-HamedNeural"
+    stt_segmentation_silence_ms = get_int_env("LIVEKIT_STT_SEGMENTATION_SILENCE_MS", 500)
+    stt_segmentation_max_time_ms = get_int_env("LIVEKIT_STT_SEGMENTATION_MAX_TIME_MS", 15000)
+    min_endpointing_delay = get_float_env("LIVEKIT_MIN_ENDPOINTING_DELAY", 0.5)
+    max_endpointing_delay = get_float_env("LIVEKIT_MAX_ENDPOINTING_DELAY", 1.5)
+    llm_model = os.getenv("LIVEKIT_LLM_MODEL", "gemini-2.5-flash").strip() or "gemini-2.5-flash"
 
     # --- System instructions ---
     instructions = os.getenv(
@@ -315,21 +340,30 @@ async def entrypoint(ctx: JobContext) -> None:
         ),
     )
 
-    # --- Gemini Live API (Native Multimodal) ---
-    llm = google.realtime.RealtimeModel(
-        model="gemini-2.5-flash-native-audio-preview-09-2025",
-        modalities=["AUDIO"],
-        voice=gemini_voice,
-        api_key=gemini_api_key,
-        instructions=instructions,
-        temperature=0.8,
-        #input_audio_transcription=genai_types.AudioTranscriptionConfig(),
-        realtime_input_config=genai_types.RealtimeInputConfig(
-            automatic_activity_detection=genai_types.AutomaticActivityDetection(
-                prefix_padding_ms=aad_prefix_padding_ms,
-                silence_duration_ms=aad_silence_ms,
-            )
-        ),
+    # --- LLM + Azure Speech pipeline ---
+    llm_model_client = anthropic.LLM(
+        model=anthropic_model,
+        api_key=anthropic_api_key,
+        temperature=0.4,
+    )
+    stt_kwargs = {}
+    if azure_stt_endpoint:
+        stt_kwargs["speech_endpoint"] = azure_stt_endpoint
+
+    stt = azure.STT(
+        speech_key=azure_speech_key,
+        speech_region=azure_speech_region,
+        language=stt_language,
+        segmentation_silence_timeout_ms=stt_segmentation_silence_ms,
+        segmentation_max_time_ms=stt_segmentation_max_time_ms,
+        **stt_kwargs,
+    )
+    tts = azure.TTS(
+        voice=tts_voice,
+        language=tts_language,
+        speech_key=azure_speech_key,
+        speech_region=azure_speech_region,
+        speech_endpoint=azure_tts_endpoint,
     )
 
     # --- Anam Avatar ---
@@ -341,21 +375,42 @@ async def entrypoint(ctx: JobContext) -> None:
         api_key=anam_api_key,
     )
 
-    # --- Session (native multimodal - fastest) ---
-    # By omitting stt and vad, we use the RealtimeModel's native VAD and STT
+    # --- Session (Azure STT/TTS for faster realtime speech + robust language control) ---
     session = AgentSession(
-        llm=llm,
-        turn_handling={
-            "turn_detection": "realtime_llm",
-            "endpointing": {
-                "min_delay": endpointing_min_delay,
-                "max_delay": endpointing_max_delay,
-            },
-        },
+        llm=llm_model_client,
+        stt=stt,
+        tts=tts,
+        # Use STT-based endpointing to avoid VAD stalls where mic is enabled but no turn is committed.
+        turn_detection="stt",
+        min_endpointing_delay=min_endpointing_delay,
+        max_endpointing_delay=max_endpointing_delay,
+    )
+    selected_user_identity = _select_initial_user_identity()
+    room_io_started = False
+    room_input_options = RoomInputOptions()
+    if selected_user_identity:
+        room_input_options.participant_identity = selected_user_identity
+        logger.info("[AUDIO] Initial user participant selected: %s", selected_user_identity)
+
+    room_output_options = RoomOutputOptions(
+        transcription_enabled=True,
+        sync_transcription=False,
     )
 
     # Avatar must start BEFORE session (per Anam docs)
     await avatar.start(session, room=ctx.room)
+
+    @ctx.room.on("participant_connected")
+    def on_participant_connected(participant: rtc.RemoteParticipant):
+        nonlocal selected_user_identity, room_io_started
+        if selected_user_identity:
+            return
+        if not _is_user_identity(participant.identity):
+            return
+        selected_user_identity = participant.identity
+        logger.info("[AUDIO] Late user participant selected: %s", selected_user_identity)
+        if room_io_started:
+            session.room_io.set_participant(selected_user_identity)
 
     # --- Listeners (Handling Typed Messages via Data Channel) ---
     @ctx.room.on("data_received")
@@ -426,7 +481,12 @@ async def entrypoint(ctx: JobContext) -> None:
             tools=[search_uploaded_documents, prepare_email_tool]
         ),
         room=ctx.room,
+        room_input_options=room_input_options,
+        room_output_options=room_output_options,
     )
+    room_io_started = True
+    if selected_user_identity:
+        session.room_io.set_participant(selected_user_identity)
 
     session.generate_reply(
         instructions=os.getenv(
@@ -438,9 +498,11 @@ async def entrypoint(ctx: JobContext) -> None:
 
 if __name__ == "__main__":
     load_dotenv(ENV_PATH)
+    worker_port = get_int_env("LIVEKIT_WORKER_PORT", 0)
     cli.run_app(
         WorkerOptions(
             entrypoint_fnc=entrypoint,
             agent_name=os.getenv("LIVEKIT_AGENT_NAME", DEFAULT_AGENT_NAME),
+            port=worker_port,
         )
     )
