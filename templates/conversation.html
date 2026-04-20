@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Musaed Live Conversation</title>
+    <script src="https://cdn.jsdelivr.net/npm/livekit-client/dist/livekit-client.umd.min.js"></script>
+    <link rel="stylesheet" href="/static/conversation-styles.css" />
+</head>
+<body>
+    <div class="conversation-container">
+        <!-- Header -->
+        <div class="conversation-header">
+            <div class="header-left">
+                <h1>🎤 Musaed Live Conversation</h1>
+                <p id="room-info">Connecting...</p>
+            </div>
+            <div class="header-right">
+                <span id="connection-status" class="status-badge connecting">● Connecting</span>
+            </div>
+        </div>
+
+        <div class="main-content">
+            <!-- Video Section (Left) -->
+            <div class="video-section">
+                <div class="video-container">
+                    <div id="remote-video-container" class="video-grid">
+                        <!-- Remote participant videos appear here -->
+                    </div>
+                    <div id="local-video-container" class="local-video">
+                        <video id="local-video" autoplay playsinline muted></video>
+                        <div class="video-label">You</div>
+                    </div>
+                </div>
+
+                <!-- Avatar Section -->
+                <div class="avatar-section">
+                    <div class="avatar-frame">
+                        <div id="anam-container" class="anam-video-wrapper">
+                            <video id="anam-video" autoplay playsinline muted></video>
+                        </div>
+                        <div class="avatar-info">
+                            <h3>Musaed Avatar</h3>
+                            <p id="avatar-status">Ready</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Sidebar (Right) -->
+            <div class="sidebar">
+                <!-- Participants Panel -->
+                <div class="panel participants-panel">
+                    <h3 class="panel-title">
+                        <span>👥 Participants</span>
+                        <span class="count" id="participant-count">0</span>
+                    </h3>
+                    <ul id="participants-list" class="participants-list">
+                        <li class="loading">Loading participants...</li>
+                    </ul>
+                </div>
+
+                <!-- Transcript Panel -->
+                <div class="panel transcript-panel">
+                    <h3 class="panel-title">
+                        <span>💬 Transcript</span>
+                    </h3>
+                    <div id="transcript" class="transcript">
+                        <div class="transcript-message system">
+                            <span class="timestamp">Now</span>
+                            <span class="text">Waiting for conversation to start...</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Controls Panel -->
+                <div class="panel controls-panel">
+                    <h3 class="panel-title">🎛️ Controls</h3>
+                    <div class="controls">
+                        <button id="toggleMic" class="control-btn" title="Toggle Microphone">
+                            <span class="icon">🎙️</span>
+                            <span>Mic</span>
+                        </button>
+                        <button id="toggleCamera" class="control-btn" title="Toggle Camera">
+                            <span class="icon">📹</span>
+                            <span>Camera</span>
+                        </button>
+                        <button id="toggleScreen" class="control-btn" title="Share Screen">
+                            <span class="icon">🖥️</span>
+                            <span>Share</span>
+                        </button>
+                        <button id="leaveRoom" class="control-btn danger" title="Leave Room">
+                            <span class="icon">📞</span>
+                            <span>Leave</span>
+                        </button>
+                    </div>
+
+                    <!-- Settings -->
+                    <div class="settings">
+                        <label>
+                            <input type="checkbox" id="autoGainControl" checked />
+                            Auto Gain
+                        </label>
+                        <label>
+                            <input type="checkbox" id="noiseSuppression" checked />
+                            Noise Suppression
+                        </label>
+                        <label>
+                            <input type="checkbox" id="echoCancellation" checked />
+                            Echo Cancel
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Chat Input -->
+                <div class="chat-input-panel">
+                    <button id="mic-transcribe" class="mic-btn" title="Speak to chat">
+                        <span class="icon">🎙️</span>
+                    </button>
+                    <textarea
+                        id="chat-input"
+                        class="chat-input"
+                        placeholder="Type a message..."
+                        rows="2"
+                    ></textarea>
+                    <button id="send-message" class="send-btn">Send</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Info Modal -->
+        <div id="info-modal" class="modal">
+            <div class="modal-content">
+                <button class="modal-close">&times;</button>
+                <h2>Connection Information</h2>
+                <div id="modal-info">
+                    <!-- Populated dynamically -->
+                </div>
+            </div>
+        </div>
+
+        <!-- Error Toast -->
+        <div id="error-toast" class="toast error-toast"></div>
+    </div>
+
+    <script src="/static/conversation.js?v=20260415-v7"></script>
+</body>
+</html>

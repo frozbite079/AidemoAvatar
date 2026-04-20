@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Musaed AI Demo UI</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Noto+Sans+Arabic:wght@400;500;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="page-shell">
+      <header class="topbar">
+        <div class="brand-lockup">
+          <div class="brand-mark">M</div>
+          <div>
+            <p class="eyebrow">Client Demo Template</p>
+            <h1>Musaed AI</h1>
+          </div>
+        </div>
+        <nav class="topnav">
+          <a href="#experience">Experience</a>
+          <a href="#workflow">Workflow</a>
+          <a href="#contact">Send Message</a>
+        </nav>
+      </header>
+
+      <main>
+        <section class="hero" id="experience">
+          <div class="hero-copy">
+            <p class="eyebrow">Saudi-inspired modern assistant UI</p>
+            <h2>Human-centered demo experience for document Q&A and outreach.</h2>
+            <p class="hero-text">
+              This template translates the Musaed specification into a polished
+              single-page interface. It keeps the avatar, upload flow, Q&amp;A,
+              and contact delivery experience visible, but leaves all AI and API
+              integrations disconnected.
+            </p>
+            <div class="hero-actions">
+              <a class="button button-primary" href="#workflow">View demo flow</a>
+              <button class="button button-secondary" id="playGreeting" type="button">
+                Play greeting preview
+              </button>
+            </div>
+            <ul class="feature-pills">
+              <li>Arabic + English ready</li>
+              <li>Upload-first guidance</li>
+              <li>WhatsApp + email form</li>
+            </ul>
+          </div>
+
+        </section>
+
+        <section class="experience-grid" id="workflow">
+          <article class="panel avatar-panel">
+            <div class="panel-heading">
+              <p class="eyebrow">01. Avatar Interface</p>
+              <h3>Human-like assistant preview</h3>
+            </div>
+            <div class="avatar-stage">
+              <div class="stage-grid"></div>
+              <div class="avatar-halo"></div>
+              <div class="avatar-core">
+                <div class="avatar-face">
+                  <span></span>
+                  <span></span>
+                </div>
+              </div>
+              <div class="status-badge">Demo Avatar Active</div>
+            </div>
+            <div class="speech-card" id="speechCard">
+              <p class="speech-label">Greeting</p>
+              <p class="speech-text">
+                Hello, I’m Musaed your AI assistant. Upload a file and ask me
+                anything about it.
+              </p>
+            </div>
+          </article>
+
+          <article class="panel chat-panel">
+            <div class="panel-heading">
+              <p class="eyebrow">02. Q&amp;A Experience</p>
+              <h3>Chat sits next to the avatar</h3>
+            </div>
+            <div class="chat-thread" id="chatThread">
+              <div class="bubble bubble-user">
+                What is the main idea of this document?
+              </div>
+              <div class="bubble bubble-assistant">
+                The document presents a lightweight Musaed demo focused on avatar
+                interaction, document understanding, and outbound messaging.
+              </div>
+            </div>
+            <div class="prompt-row">
+              <button class="prompt-chip" type="button">Summarize the file</button>
+              <button class="prompt-chip" type="button">Extract key points</button>
+              <button class="prompt-chip" type="button">Prepare a follow-up</button>
+            </div>
+            <form class="chat-composer" id="chatComposer">
+              <input
+                id="chatInput"
+                type="text"
+                placeholder="Type a sample client question..."
+                aria-label="Question input"
+              />
+              <button class="button button-primary" type="submit">Ask</button>
+            </form>
+          </article>
+        </section>
+
+        <section class="workflow-grid">
+          <article class="panel upload-panel">
+            <div class="panel-heading">
+              <p class="eyebrow">03. Document Upload</p>
+              <h3>Drop a client file here</h3>
+            </div>
+            <label class="dropzone" for="fileInput">
+              <input id="fileInput" type="file" accept=".pdf,.doc,.docx,.txt,.xls,.xlsx" />
+              <div class="dropzone-icon">+</div>
+              <strong>Drag &amp; drop or click to upload</strong>
+              <span>Accepted: PDF, Word, Text, Excel up to 5MB</span>
+            </label>
+            <div class="upload-result" id="uploadResult">
+              <p class="upload-state">No document uploaded yet.</p>
+            </div>
+          </article>
+
+          <article class="panel summary-panel">
+            <div class="panel-heading">
+              <p class="eyebrow">04. Demo Journey</p>
+              <h3>Client-facing walkthrough</h3>
+            </div>
+            <ol class="journey-list">
+              <li>Client lands on the page and sees the avatar greeting.</li>
+              <li>They upload a file and receive a ready-state confirmation.</li>
+              <li>They ask a question and see an answer in voice/text style UI.</li>
+              <li>They trigger a WhatsApp or email follow-up from the same page.</li>
+            </ol>
+            <div class="insight-card" id="statusCard">
+              <p class="insight-label">Current demo status</p>
+              <p class="insight-value">UI only. No AI services connected.</p>
+            </div>
+          </article>
+        </section>
+
+        <section class="contact-grid" id="contact">
+          <article class="panel form-panel">
+            <div class="panel-heading">
+              <p class="eyebrow">05. Delivery Form</p>
+              <h3>Send by WhatsApp or email</h3>
+            </div>
+            <form class="delivery-form" id="deliveryForm">
+              <label>
+                <span>Name</span>
+                <input type="text" name="name" placeholder="Client or lead name" />
+              </label>
+              <label>
+                <span>Email</span>
+                <input type="email" name="email" placeholder="name@company.com" />
+              </label>
+              <label>
+                <span>WhatsApp Number</span>
+                <input type="tel" name="phone" placeholder="+966 5X XXX XXXX" />
+              </label>
+              <label>
+                <span>Message</span>
+                <textarea
+                  name="message"
+                  rows="4"
+                  placeholder="Write a summary, proposal, or follow-up message..."
+                ></textarea>
+              </label>
+              <button class="button button-primary" type="submit">
+                Send demo message
+              </button>
+            </form>
+          </article>
+        </section>
+      </main>
+
+      <footer class="footer">
+        <p>Musaed AI demo template</p>
+        <p>Modern UI only. Integration layer intentionally omitted.</p>
+      </footer>
+    </div>
+
+    <script src="./script.js"></script>
+  </body>
+</html>

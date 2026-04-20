@@ -1,0 +1,107 @@
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                  SEQUENTIAL vs PARALLEL RESPONSE MODEL                        ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ BEFORE: Sequential (Response → Then Speech)                                 │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+Timeline:
+│
+├─ [0s] User: "What is this document?"
+│
+├─ [0.5s] Response Generation Starts
+│  └─ Generating... Generating... Generating...
+│
+├─ [3s] Response Complete
+│  └─ ✓ Full text ready
+│
+├─ [3.1s] Avatar Speech Starts
+│  └─ "This document discusses..."
+│
+└─ [8s] Speech Complete
+
+Total Perceived Latency: 3+ seconds before hearing anything
+
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ AFTER: Parallel (Response ↔ Speech Simultaneously)                          │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+Timeline:
+│
+├─ [0s] User: "What is this document?"
+│
+├─ [0.5s] Response Generation Starts
+│  └─ "This is a..." (40 chars threshold reached)
+│
+├─ [0.6s] ▶️ Avatar Speech Starts (parallel!)
+│  └─ "This is a..." (while generation continues)
+│
+├─ [1.5s] Speech continues while response still generating
+│  └─ Avatar: "...comprehensive guide about..." | Generation: "...continued..."
+│
+├─ [3s] Both response generation AND speech finish together
+│  └─ ✓ Seamless, natural conversation
+│
+└─ [3.5s] Ready for next interaction
+
+Total Perceived Latency: 0.6 seconds until voice heard
+User sees text + hears voice simultaneously: ENGAGING!
+
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ KEY IMPROVEMENTS                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+Metric                     Before          After           Improvement
+─────────────────────────────────────────────────────────────────────────────
+Time to First Word        3.0s            0.6s            ⚡ 80% faster
+User Perception           Delayed         Instant         👂 Real-time
+Avatar Naturalness        Robotic          Natural         🎭 Conversational
+User Engagement           Passive         Active          👀 Interactive
+Response Completeness     Text+Voice      Text+Voice      ✓ Same
+Error Recovery            Retry           Graceful         🛡️ Better
+
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ ALGORITHM: When Does Avatar Start Speaking?                                 │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+START CONDITIONS:
+├─ Streaming begins
+├─ Accumulate characters...
+├─ At 40+ characters (MIN_CHARS_TO_SPEAK threshold)
+│  └─ Avatar starts speaking ✓
+│
+├─ Response continues streaming
+│  └─ Avatar speaks generated text
+│  └─ Chat bubble updates with new text
+│  └─ No interference or conflict
+│
+└─ Response complete
+   └─ Speech finishes naturally
+   └─ Ready for next query
+
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ EXAMPLE CONVERSATION                                                         │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+User: "Summarize this document"
+                          ↓
+         [Response streaming starts]
+         "This document covers..."
+                          ↓
+                    [40+ chars reached]
+                          ↓
+              [Avatar starts speaking]
+    👤 Speech: "This document covers..."
+    💬 Text UI: "This document covers the key..."
+                          ↓
+           [Both continue simultaneously]
+    👤 Speech: "...important market trends..."
+    💬 Text UI: "...important market trends and growth opportunities..."
+                          ↓
+                    [Both complete]
+    ✅ User got full response while hearing it naturally!

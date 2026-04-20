@@ -1,0 +1,14 @@
+services:
+  tei:
+    image: ghcr.io/huggingface/text-embedding-inference:latest
+    container_name: tei-server
+    restart: unless-stopped
+    ports:
+      - "8083:80"
+    volumes:
+      - ./data/tei:/data
+    environment:
+      - MODEL_ID=BAAI/bge-large-en-v1.5
+      - SHARD_SIZE_MAX=500000000
+      - MAX_BATCH_TOKENS=8192
+      - MAX_INPUT_LENGTH=1024

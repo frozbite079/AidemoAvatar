@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Avatar Debug Helper</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 800px; margin: 50px auto; padding: 20px; }
+        .step { margin: 20px 0; padding: 15px; border-left: 4px solid #007acc; background: #f0f8ff; }
+        .issue { background: #fff0f0; border-left-color: #cc0000; }
+        .success { background: #f0fff0; border-left-color: #00cc00; }
+        button { padding: 10px 20px; margin: 5px; font-size: 16px; cursor: pointer; }
+        .status { margin: 10px 0; padding: 10px; background: #f5f5f5; border-radius: 5px; }
+    </style>
+</head>
+<body>
+    <h1>🐛 Avatar Debug Helper</h1>
+    
+    <div class="step">
+        <h3>Step 1: Check Azure Speech Configuration</h3>
+        <button onclick="checkConfig()">Check Configuration</button>
+        <div id="config-status" class="status">Click button to check...</div>
+    </div>
+    
+    <div class="step">
+        <h3>Step 2: Test Avatar Relay</h3>
+        <button onclick="checkRelay()">Test Avatar Relay</button>
+        <div id="relay-status" class="status">Click button to check...</div>
+    </div>
+    
+    <div class="step">
+        <h3>Step 3: Test Speech Token</h3>
+        <button onclick="checkToken()">Test Speech Token</button>
+        <div id="token-status" class="status">Click button to check...</div>
+    </div>
+    
+    <div class="issue">
+        <h3>🚨 Common Issues & Solutions</h3>
+        <ul>
+            <li><strong>Avatar area is white/empty:</strong> You need to click "Start Avatar" first</li>
+            <li><strong>"Start Avatar" button missing:</strong> Open the assistant popup first</li>
+            <li><strong>Connection fails:</strong> Check Azure Speech credentials</li>
+            <li><strong>Browser blocks camera/mic:</strong> Allow permissions when prompted</li>
+        </ul>
+    </div>
+    
+    <div class="step">
+        <h3>Step 4: Manual Avatar Test</h3>
+        <p>If all above tests pass, the issue is likely that you need to:</p>
+        <ol>
+            <li>Go to <a href="http://localhost:8000">http://localhost:8000</a></li>
+            <li>Click "Ask Musaed" to open the popup</li>
+            <li>Look for "Avatar Settings" section</li>
+            <li>Click "Start Avatar" button</li>
+            <li>Wait for "Avatar connected" status</li>
+        </ol>
+    </div>
+
+    <script>
+        async function checkConfig() {
+            const status = document.getElementById('config-status');
+            try {
+                status.textContent = 'Checking...';
+                const response = await fetch('/api/config');
+                const data = await response.json();
+                
+                if (data.speechReady) {
+                    status.innerHTML = '✅ Azure Speech is configured correctly<br>' + 
+                                     `Region: ${data.speechRegion}<br>` +
+                                     `Endpoint: ${data.speechEndpoint}`;
+                    status.className = 'status success';
+                } else {
+                    status.innerHTML = '❌ Azure Speech not configured<br>' + 
+                                     'Please add your API key to the .env file';
+                    status.className = 'status issue';
+                }
+            } catch (error) {
+                status.textContent = '❌ Error: ' + error.message;
+                status.className = 'status issue';
+            }
+        }
+        
+        async function checkRelay() {
+            const status = document.getElementById('relay-status');
+            try {
+                status.textContent = 'Checking...';
+                const response = await fetch('/api/avatar/relay');
+                const data = await response.json();
+                
+                if (data.urls && data.urls.length > 0) {
+                    status.innerHTML = '✅ Avatar relay working<br>' + 
+                                     `Relay server: ${data.urls[0]}<br>` +
+                                     `Username: ${data.username.substring(0, 20)}...`;
+                    status.className = 'status success';
+                } else {
+                    status.textContent = '❌ Avatar relay not working';
+                    status.className = 'status issue';
+                }
+            } catch (error) {
+                status.textContent = '❌ Error: ' + error.message;
+                status.className = 'status issue';
+            }
+        }
+        
+        async function checkToken() {
+            const status = document.getElementById('token-status');
+            try {
+                status.textContent = 'Checking...';
+                const response = await fetch('/api/speech/token', { method: 'POST' });
+                const data = await response.json();
+                
+                if (data.token) {
+                    status.innerHTML = '✅ Speech token generated successfully<br>' + 
+                                     `Region: ${data.region}<br>` +
+                                     `Token: ${data.token.substring(0, 50)}...`;
+                    status.className = 'status success';
+                } else {
+                    status.textContent = '❌ Failed to generate speech token';
+                    status.className = 'status issue';
+                }
+            } catch (error) {
+                status.textContent = '❌ Error: ' + error.message;
+                status.className = 'status issue';
+            }
+        }
+    </script>
+</body>
+</html>
